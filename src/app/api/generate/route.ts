@@ -8,11 +8,24 @@ import { z } from "zod";
 import { generateOutline } from "@/agent/orchestrator";
 import type { GenerateRequest, SSEEvent } from "@/types/api";
 
+/** 单个文档上下文的 Schema */
+const documentContextSchema = z.object({
+  filename: z.string(),
+  content: z.string(),
+  hasPageStructure: z.boolean(),
+  pages: z.array(z.string()).optional(),
+  headings: z.array(z.string()),
+});
+
 const generateRequestSchema = z.object({
   userInput: z.string().min(1, "userInput 不能为空").max(5000, "userInput 不能超过 5000 字符"),
   pageCount: z.number().int().min(5).max(30).optional(),
   purpose: z.string().optional(),
   audience: z.string().optional(),
+  /** 解析后的文档列表（可选） */
+  documents: z.array(documentContextSchema).max(3).optional(),
+  /** 用户手动指定的场景类型（可选） */
+  scenarioType: z.enum(["A", "B", "C"]).optional(),
   llmConfig: z.object({
     apiKey: z.string().min(1, "API Key 不能为空"),
     baseUrl: z.string().url("Base URL 格式不正确"),

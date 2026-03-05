@@ -22,8 +22,13 @@ export type StyleHintType =
   | "故事驱动"
   | "视觉导向";
 
-/** 场景类型，Phase 1 固定为 B（主题扩写模式） */
-export type ScenarioType = "B";
+/**
+ * 场景类型
+ * A: 结构化还原（文档有明确分页）
+ * B: 主题扩写（仅文字输入，无文档）
+ * C: 散乱重组（有文档但无结构）
+ */
+export type ScenarioType = "A" | "B" | "C";
 
 /** M1 意图分析结果 */
 export interface IntentAnalysis {
@@ -31,7 +36,7 @@ export interface IntentAnalysis {
   purpose: string;
   /** 目标受众 */
   audience: string;
-  /** 场景类型（Phase 1 固定为 B） */
+  /** 场景类型（A/B/C，由 Agent 自动判断或用户手动指定） */
   scenarioType: ScenarioType;
   /** LLM 推荐的页数 */
   pageCountSuggestion: number;

@@ -2,10 +2,17 @@
  * M1 意图分析模块的 Prompt 构建函数
  */
 
+import type { DocumentContext } from "@/types/api";
+
 /** 构建 M1 意图分析的 User Prompt */
 export function buildM1Prompt(
   userInput: string,
-  options?: { purpose?: string; audience?: string }
+  options?: {
+    purpose?: string;
+    audience?: string;
+    documents?: DocumentContext[];
+    scenarioType?: "A" | "B" | "C";
+  }
 ): string {
   // 如果用户已指定某些字段，在 Prompt 中告知 LLM 直接使用
   const purposeHint = options?.purpose
@@ -15,14 +22,48 @@ export function buildM1Prompt(
     ? `\n**注意**：用户已指定受众为"${options.audience}"，请直接使用此值，不需要重新推断。`
     : "";
 
+  // 构建文档上下文信息（注入到 Prompt 中）
+  let documentContext = "";
+  if (options?.documents && options.documents.length > 0) {
+    const docSummaries = options.documents
+      .map((doc, i) => {
+        const preview = doc.content.slice(0, 300).replace(/\n+/g, " ");
+        return `文档${i + 1}（${doc.filename}）：
+  - 字数：${doc.content.length}字
+  - 有分页结构：${doc.hasPageStructure ? "是" : "否"}
+  - 标题列表：${doc.headings.slice(0, 5).join("、") || "未检测到"}
+  - 内容预览：${preview}...`;
+      })
+      .join("\n\n");
+    documentContext = `\n\n## 用户上传的文档
+${docSummaries}`;
+  }
+
+  // 场景类型提示
+  let scenarioHint = "";
+  if (options?.scenarioType) {
+    // 用户手动指定了场景类型
+    scenarioHint = `\n**注意**：用户已手动指定场景类型为"${options.scenarioType}"，请直接使用，不需要重新判断。`;
+  } else if (options?.documents && options.documents.length > 0) {
+    // 有文档时，让 LLM 根据文档结构判断场景
+    const hasStructure = options.documents.some((d) => d.hasPageStructure);
+    if (hasStructure) {
+      scenarioHint = `\n**场景判断提示**：检测到文档有明确的分页结构，建议返回场景类型"A"（结构化还原）。`;
+    } else {
+      scenarioHint = `\n**场景判断提示**：文档无明确分页结构，内容较散乱，建议返回场景类型"C"（散乱重组）。`;
+    }
+  } else {
+    scenarioHint = `\n**场景判断提示**：用户仅输入了文字，无文档，请返回场景类型"B"（主题扩写）。`;
+  }
+
   return `## 任务
-分析用户的 PPT 制作需求，理解其意图并提取关键信息。
+分析用户的 PPT 制作需求，理解其意图并提取关键信息。${documentContext}
 
 ## 用户输入
 """
 ${userInput}
 """
-${purposeHint}${audienceHint}
+${purposeHint}${audienceHint}${scenarioHint}
 
 ## 分析维度
 
@@ -49,14 +90,15 @@ ${purposeHint}${audienceHint}
    - 用户输入非常模糊：0.3-0.5
 
 ## 场景类型说明
-Phase 1 只处理场景 B（主题扩写），即用户给出主题，AI 负责扩展内容。
-请固定返回 "scenarioType": "B"。
+- A（结构化还原）：用户上传了有明确分页结构的文档，按文档结构生成大纲
+- B（主题扩写）：用户只输入了文字主题，AI 负责自由扩展内容
+- C（散乱重组）：用户上传了文档但内容结构散乱，需要重新梳理逻辑
 
 ## 输出 JSON 格式（严格按此格式，不要添加额外字段）
 {
   "purpose": "string -- PPT 用途，从上述选项中选择",
   "audience": "string -- 目标受众描述",
-  "scenarioType": "B",
+  "scenarioType": "A" | "B" | "C",
   "pageCountSuggestion": number -- 推荐页数（5-30之间的整数）,
   "styleHint": "string -- 风格倾向，从上述选项中选择",
   "topicKeywords": ["string -- 关键词1", "string -- 关键词2"],

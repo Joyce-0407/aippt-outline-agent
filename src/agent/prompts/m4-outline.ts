@@ -1,15 +1,69 @@
 /**
  * M4 大纲细化生成模块的 Prompt 构建函数
+ * 支持三种场景策略：A（结构化还原）、B（主题扩写）、C（散乱重组）
  */
 
 import type { IntentAnalysis } from "@/types/intent";
 import type { Storyline } from "@/types/storyline";
+import type { DocumentContext } from "@/types/api";
+
+/** 根据场景类型生成场景策略说明文字 */
+function buildScenarioInstruction(
+  scenarioType: "A" | "B" | "C",
+  documents?: DocumentContext[]
+): string {
+  if (scenarioType === "A" && documents && documents.length > 0) {
+    // 场景A：结构化还原，尊重原始文档分页
+    const docInfo = documents
+      .map((doc) => {
+        const pagesInfo = doc.pages
+          ? `文档共 ${doc.pages.length} 页，按以下结构还原：\n${doc.pages
+              .slice(0, 10) // 最多展示前10页避免超出 token
+              .map((p, i) => `  第${i + 1}页：${p.slice(0, 200).replace(/\n+/g, " ")}`)
+              .join("\n")}`
+          : `文档无明确分页，标题如下：${doc.headings.slice(0, 10).join("、")}`;
+        return `【${doc.filename}】\n${pagesInfo}`;
+      })
+      .join("\n\n");
+
+    return `## 场景策略：A（结构化还原）
+用户上传了有明确分页结构的文档，请尽可能按照原始文档的分页和章节顺序生成大纲，每页对应文档中的一个章节或幻灯片。
+
+## 参考文档内容
+${docInfo}
+
+**重要**：优先还原文档原有结构，同时丰富每页的视觉设计和内容细节。`;
+  }
+
+  if (scenarioType === "C" && documents && documents.length > 0) {
+    // 场景C：散乱重组，对内容重新梳理逻辑
+    const docInfo = documents
+      .map((doc) => {
+        const preview = doc.content.slice(0, 1000).replace(/\n+/g, " ");
+        return `【${doc.filename}】\n内容摘要：${preview}...\n标题/要点：${doc.headings.slice(0, 8).join("、")}`;
+      })
+      .join("\n\n");
+
+    return `## 场景策略：C（散乱重组）
+用户上传的文档内容结构散乱，请提取核心观点，重新建立清晰的逻辑结构，打造一个有说服力的 PPT 叙事流程。
+
+## 参考文档内容（需要重组）
+${docInfo}
+
+**重要**：不必拘泥于文档原有顺序，重点是建立逻辑性强、表达清晰的叙事结构。`;
+  }
+
+  // 场景B：主题扩写（默认）
+  return `## 场景策略：B（主题扩写）
+用户提供了主题，请结合故事线自由创作，补全丰富的内容细节。`;
+}
 
 /** 构建 M4 大纲细化的 User Prompt */
 export function buildM4Prompt(
   userInput: string,
   intent: IntentAnalysis,
-  storyline: Storyline
+  storyline: Storyline,
+  documents?: DocumentContext[]
 ): string {
   // 将章节信息格式化为易读文本，注入到 Prompt 中
   const sectionsText = storyline.sections
@@ -19,8 +73,14 @@ export function buildM4Prompt(
     )
     .join("\n");
 
+  // 根据场景类型生成对应的策略说明
+  const scenarioType = intent.scenarioType ?? "B";
+  const scenarioInstruction = buildScenarioInstruction(scenarioType, documents);
+
   return `## 任务
 基于已确定的故事线，为每一页生成详细的 PPT 大纲。必须输出所有 ${storyline.totalPages} 页的完整内容。
+
+${scenarioInstruction}
 
 ## 用户原始输入
 """
@@ -79,7 +139,7 @@ ${sectionsText}
     "purpose": "${intent.purpose}",
     "audience": "${intent.audience}",
     "totalPages": ${storyline.totalPages},
-    "scenarioType": "B"
+    "scenarioType": "${scenarioType}"
   },
   "storyline": ${JSON.stringify(storyline)},
   "pages": [

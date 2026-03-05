@@ -7,10 +7,15 @@ import { validateIntentAnalysis } from "@/lib/validators";
 import { SYSTEM_PROMPT } from "@/agent/prompts/system";
 import { buildM1Prompt } from "@/agent/prompts/m1-intent";
 import type { IntentAnalysis } from "@/types/intent";
+import type { DocumentContext } from "@/types/api";
 
 export interface AnalyzeIntentOptions {
   purpose?: string;
   audience?: string;
+  /** 上传的文档（用于场景判断） */
+  documents?: DocumentContext[];
+  /** 用户手动指定的场景类型 */
+  scenarioType?: "A" | "B" | "C";
 }
 
 export async function analyzeIntent(

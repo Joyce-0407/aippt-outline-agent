@@ -5,6 +5,7 @@
 import { IntentAnalysis } from "./intent";
 import { Storyline } from "./storyline";
 import { PPTOutline } from "./outline";
+import type { ScenarioType } from "./document";
 
 /** LLM 配置，由前端用户填写后随请求传入 */
 export interface LLMConfig {
@@ -14,6 +15,20 @@ export interface LLMConfig {
   baseUrl: string;
   /** 模型名称，例如 qwen-max */
   model: string;
+}
+
+/** 随 generate 请求传入的文档信息（解析后的结构化内容） */
+export interface DocumentContext {
+  /** 文件名 */
+  filename: string;
+  /** 解析后的纯文本 */
+  content: string;
+  /** 是否有明确分页结构 */
+  hasPageStructure: boolean;
+  /** 若有分页，按页存储内容 */
+  pages?: string[];
+  /** 提取的标题列表 */
+  headings: string[];
 }
 
 /** 大纲生成请求体 */
@@ -26,12 +41,16 @@ export interface GenerateRequest {
   purpose?: string;
   /** 可选：目标受众 */
   audience?: string;
+  /** 可选：上传并解析后的文档列表 */
+  documents?: DocumentContext[];
+  /** 可选：场景类型（用户手动指定，否则由 Agent 自动判断） */
+  scenarioType?: ScenarioType;
   /** LLM 配置，从前端设置面板传入 */
   llmConfig: LLMConfig;
 }
 
-/** SSE 进度状态步骤 */
-export type SSEStep = "intent" | "storyline" | "outline";
+/** SSE 进度状态步骤（parse 步骤仅在有文档时出现） */
+export type SSEStep = "parse" | "intent" | "storyline" | "outline";
 
 /** SSE 事件类型联合体 */
 export type SSEEvent =

@@ -35,7 +35,8 @@ export async function generateOutline(
   input: GenerateRequest,
   onEvent: (event: SSEEvent) => void
 ): Promise<PPTOutline> {
-  console.log(`[Orchestrator] 开始，输入长度: ${input.userInput.length} 字`);
+  const docCount = input.documents?.length ?? 0;
+  console.log(`[Orchestrator] 开始，输入长度: ${input.userInput.length} 字，文档数: ${docCount}`);
 
   const config: LLMClientConfig = {
     apiKey: input.llmConfig.apiKey,
@@ -49,7 +50,12 @@ export async function generateOutline(
   let intentResult;
   try {
     intentResult = await withRetry(
-      () => analyzeIntent(input.userInput, config, { purpose: input.purpose, audience: input.audience }),
+      () => analyzeIntent(input.userInput, config, {
+        purpose: input.purpose,
+        audience: input.audience,
+        documents: input.documents,
+        scenarioType: input.scenarioType,
+      }),
       1, "M1 意图分析"
     );
   } catch (error) {
@@ -57,6 +63,8 @@ export async function generateOutline(
     throw error;
   }
   onEvent({ type: "intent", data: intentResult });
+
+  console.log(`[Orchestrator] 场景判断结果: ${intentResult.scenarioType}`);
 
   // ── M3 故事线 ────────────────────────────────────────────────
   onEvent({ type: "status", step: "storyline", message: "正在构建故事线..." });
@@ -87,7 +95,8 @@ export async function generateOutline(
       (page, index) => {
         // 每解析出一页就立即推送
         onEvent({ type: "page", data: page, index });
-      }
+      },
+      input.documents  // 将文档内容传给 M4，用于场景A/C的内容参考
     );
   } catch (error) {
     onEvent({ type: "error", message: `大纲生成失败：${error instanceof Error ? error.message : "未知错误"}`, code: "LLM_ERROR" });
