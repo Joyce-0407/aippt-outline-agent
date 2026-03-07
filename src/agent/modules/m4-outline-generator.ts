@@ -10,7 +10,7 @@ import { buildM4Prompt } from "@/agent/prompts/m4-outline";
 import type { IntentAnalysis } from "@/types/intent";
 import type { Storyline } from "@/types/storyline";
 import type { PPTOutline, Page } from "@/types/outline";
-import type { DocumentContext } from "@/types/api";
+import type { DocumentContext, ResearchContext } from "@/types/api";
 
 /**
  * 从 JSON 缓冲区中提取所有已完整的 Page 对象
@@ -78,11 +78,13 @@ export async function generateDetailedOutline(
   config: LLMClientConfig,
   onPage: (page: Page, index: number) => void,
   /** 可选：上传的文档列表，用于场景A/C的内容填充 */
-  documents?: DocumentContext[]
+  documents?: DocumentContext[],
+  /** 可选：联网检索结果，用于场景B增强 */
+  research?: ResearchContext
 ): Promise<PPTOutline> {
   console.log(`[M4] 开始流式生成大纲，共 ${storyline.totalPages} 页，场景: ${intent.scenarioType ?? "B"}...`);
 
-  const userPrompt = buildM4Prompt(userInput, intent, storyline, documents);
+  const userPrompt = buildM4Prompt(userInput, intent, storyline, documents, research);
 
   let buffer = "";
   let emittedCount = 0;

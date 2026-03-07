@@ -27,6 +27,9 @@ export default function PageCard({ page }: PageCardProps) {
   const [showDesign, setShowDesign] = useState(false);
   const [showSpeakerNotes, setShowSpeakerNotes] = useState(false);
 
+  const content = page.content ?? { headline: "", subheadline: "", body: [] };
+  const design = page.design ?? { layout: "未指定", visualElements: [] };
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
       {/* 卡片头部：页码 + 章节标签 + 标题 */}
@@ -49,24 +52,24 @@ export default function PageCard({ page }: PageCardProps) {
         </h3>
 
         {/* 主标题 */}
-        {page.content.headline && (
+        {content.headline && (
           <p className="text-sm text-gray-600 font-medium">
-            {page.content.headline}
+            {content.headline}
           </p>
         )}
         {/* 副标题 */}
-        {page.content.subheadline && (
+        {content.subheadline && (
           <p className="text-sm text-gray-500 mt-1">
-            {page.content.subheadline}
+            {content.subheadline}
           </p>
         )}
       </div>
 
       {/* 内容块区域 */}
-      {page.content.body.length > 0 && (
+      {content.body.length > 0 && (
         <div className="px-5 pb-4">
           <div className="space-y-2">
-            {page.content.body.map((block, idx) => {
+            {content.body.map((block, idx) => {
               const config = BLOCK_TYPE_CONFIG[block.type] ?? BLOCK_TYPE_CONFIG.point;
               return (
                 <div
@@ -157,23 +160,15 @@ export default function PageCard({ page }: PageCardProps) {
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400">布局</span>
               <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-medium">
-                {page.design.layout}
+                {design.layout}
               </span>
-              {page.design.colorTone && (
-                <>
-                  <span className="text-xs text-gray-400">色调</span>
-                  <span className="text-xs px-2 py-0.5 bg-pink-50 text-pink-600 rounded-full font-medium">
-                    {page.design.colorTone}
-                  </span>
-                </>
-              )}
             </div>
             {/* 视觉元素 */}
-            {page.design.visualElements.length > 0 && (
+            {design.visualElements.length > 0 && (
               <div>
                 <span className="text-xs text-gray-400 block mb-1">视觉元素</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {page.design.visualElements.map((element, idx) => (
+                  {design.visualElements.map((element, idx) => (
                     <span
                       key={idx}
                       className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full"

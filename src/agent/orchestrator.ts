@@ -6,9 +6,68 @@
 import { analyzeIntent } from "@/agent/modules/m1-intent-analyzer";
 import { buildStoryline } from "@/agent/modules/m3-storyline-builder";
 import { generateDetailedOutline } from "@/agent/modules/m4-outline-generator";
+import { researchTopic } from "@/agent/modules/m2-researcher";
 import { LLMError, type LLMClientConfig } from "@/lib/llm-client";
-import type { GenerateRequest, SSEEvent } from "@/types/api";
+import type { GenerateRequest, SSEEvent, DocumentContext } from "@/types/api";
 import type { PPTOutline } from "@/types/outline";
+import type { Storyline } from "@/types/storyline";
+
+
+function getStructuredDocumentPageCount(documents?: DocumentContext[]): number | null {
+  if (!documents || documents.length === 0) return null;
+
+  const structuredDocs = documents.filter((doc) => doc.hasPageStructure);
+  if (structuredDocs.length === 0) return null;
+
+  const pageCounts = structuredDocs
+    .map((doc) => doc.pageCount ?? doc.pages?.length ?? 0)
+    .filter((count) => count > 0);
+
+  if (pageCounts.length === 0) return null;
+
+  // 多文档时取页数最大的结构化文档，避免被短文档截断
+  return Math.max(...pageCounts);
+}
+
+function enforceTotalPages(storyline: Storyline, targetPages: number): Storyline {
+  if (storyline.totalPages === targetPages) return storyline;
+
+  if (!storyline.sections.length) {
+    return { ...storyline, totalPages: targetPages };
+  }
+
+  const adjustedSections = storyline.sections.map((section) => ({
+    ...section,
+    pageRange: [...section.pageRange] as [number, number],
+  }));
+
+  adjustedSections[adjustedSections.length - 1].pageRange[1] = targetPages;
+
+  let cursor = 1;
+  for (const section of adjustedSections) {
+    const originalLength = Math.max(1, section.pageRange[1] - section.pageRange[0] + 1);
+    const start = cursor;
+    const end = Math.max(start, start + originalLength - 1);
+    section.pageRange = [start, end];
+    cursor = end + 1;
+  }
+
+  adjustedSections[adjustedSections.length - 1].pageRange[1] = targetPages;
+
+  for (let i = adjustedSections.length - 2; i >= 0; i--) {
+    const current = adjustedSections[i];
+    const next = adjustedSections[i + 1];
+    if (current.pageRange[1] >= next.pageRange[0]) {
+      current.pageRange[1] = Math.max(current.pageRange[0], next.pageRange[0] - 1);
+    }
+  }
+
+  return {
+    ...storyline,
+    totalPages: targetPages,
+    sections: adjustedSections,
+  };
+}
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -62,24 +121,59 @@ export async function generateOutline(
     onEvent({ type: "error", message: `需求分析失败：${error instanceof Error ? error.message : "未知错误"}`, code: "LLM_ERROR" });
     throw error;
   }
-  onEvent({ type: "intent", data: intentResult });
 
-  console.log(`[Orchestrator] 场景判断结果: ${intentResult.scenarioType}`);
+  const structuredDocPageCount = getStructuredDocumentPageCount(input.documents);
+  const hasStructuredDocs = (input.documents ?? []).some((doc) => doc.hasPageStructure);
+  const resolvedScenarioType: "A" | "B" | "C" = input.scenarioType
+    ?? (hasStructuredDocs ? "A" : intentResult.scenarioType);
 
-  // ── M3 故事线 ────────────────────────────────────────────────
+  const effectivePageCount = input.pageCount
+    ?? (resolvedScenarioType === "A" ? structuredDocPageCount ?? undefined : undefined);
+
+  const resolvedIntentResult = {
+    ...intentResult,
+    scenarioType: resolvedScenarioType,
+    pageCountSuggestion: effectivePageCount ?? intentResult.pageCountSuggestion,
+  };
+
+  onEvent({ type: "intent", data: resolvedIntentResult });
+
+  if (resolvedScenarioType === "A" && structuredDocPageCount) {
+    console.log(`[Orchestrator] 场景A：检测到结构化文档页数 ${structuredDocPageCount}，将优先按该页数生成`);
+  }
+
+
   onEvent({ type: "status", step: "storyline", message: "正在构建故事线..." });
 
   let storylineResult;
   try {
     storylineResult = await withRetry(
-      () => buildStoryline(input.userInput, intentResult, config, input.pageCount),
+      () => buildStoryline(input.userInput, resolvedIntentResult, config, effectivePageCount),
       1, "M3 故事线构建"
     );
   } catch (error) {
     onEvent({ type: "error", message: `故事线构建失败：${error instanceof Error ? error.message : "未知错误"}`, code: "LLM_ERROR" });
     throw error;
   }
+
+  if (effectivePageCount && storylineResult.totalPages !== effectivePageCount) {
+    console.warn(
+      `[Orchestrator] M3 返回页数 ${storylineResult.totalPages} 与目标 ${effectivePageCount} 不一致，已强制修正`
+    );
+    storylineResult = enforceTotalPages(storylineResult, effectivePageCount);
+  }
+
   onEvent({ type: "storyline", data: storylineResult });
+
+  // ── M2 联网检索（场景B优先）────────────────────────────────────
+  let researchResult;
+  if (resolvedScenarioType === "B") {
+    onEvent({ type: "status", step: "research", message: "正在联网检索补充信息..." });
+    researchResult = await researchTopic(input.userInput, resolvedIntentResult);
+    if (researchResult) {
+      onEvent({ type: "research", data: researchResult });
+    }
+  }
 
   // ── M4 大纲生成（流式）──────────────────────────────────────
   onEvent({ type: "status", step: "outline", message: "正在生成详细大纲..." });
@@ -89,14 +183,15 @@ export async function generateOutline(
     // M4 不再 withRetry，因为流式输出中途失败重试意义不大
     outline = await generateDetailedOutline(
       input.userInput,
-      intentResult,
+      resolvedIntentResult,
       storylineResult,
       config,
       (page, index) => {
         // 每解析出一页就立即推送
         onEvent({ type: "page", data: page, index });
       },
-      input.documents  // 将文档内容传给 M4，用于场景A/C的内容参考
+      input.documents,  // 将文档内容传给 M4，用于场景A/C的内容参考
+      researchResult
     );
   } catch (error) {
     onEvent({ type: "error", message: `大纲生成失败：${error instanceof Error ? error.message : "未知错误"}`, code: "LLM_ERROR" });

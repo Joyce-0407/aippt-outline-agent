@@ -1,17 +1,11 @@
 "use client";
 
-/**
- * 用户输入面板组件
- * 包含：文本输入框、可选参数（折叠面板）、生成按钮
- */
+import { useState, useRef, useCallback } from "react";
+import type { GenerateRequest, DocumentContext } from "@/types/api";
+import type { ParsedDocument } from "@/types/document";
 
-import { useState } from "react";
-import type { GenerateRequest } from "@/types/api";
-
-/** InputPanel 对外暴露的请求类型（不含 llmConfig，由页面层注入） */
 type InputRequest = Omit<GenerateRequest, "llmConfig">;
 
-/** 示例主题列表，帮助用户快速体验 */
 const EXAMPLE_TOPICS = [
   "帮我做一个关于 AI 在教育中应用的 PPT",
   "Q1 销售业绩汇报，重点分析增长亮点和下季度策略",
@@ -20,213 +14,281 @@ const EXAMPLE_TOPICS = [
   "Python 编程入门课件，面向零基础学员",
 ];
 
-/** 用途选项 */
-const PURPOSE_OPTIONS = [
-  "工作汇报",
-  "商业提案",
-  "教学课件",
-  "演讲分享",
-  "产品介绍",
-  "项目总结",
-  "竞品分析",
-  "培训材料",
-  "其他",
-];
+
+const ACCEPTED_FILE_TYPES = ".pdf,.docx,.doc,.md,.markdown,.txt";
+
+const SCENARIO_LABELS: Record<string, { label: string; color: string; desc: string }> = {
+  A: { label: "结构化还原", color: "bg-blue-50 text-blue-700 border-blue-200", desc: "将按原始结构生成大纲" },
+  C: { label: "散乱重组", color: "bg-amber-50 text-amber-700 border-amber-200", desc: "将重新梳理文档逻辑" },
+};
+
+function formatSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function detectScenario(docs: ParsedDocument[]): "A" | "C" {
+  return docs.some((d) => d.hasPageStructure) ? "A" : "C";
+}
+
+interface UploadedFile {
+  file: File;
+  status: "uploading" | "done" | "error";
+  parsed?: ParsedDocument;
+  error?: string;
+}
 
 interface InputPanelProps {
-  /** 点击生成时的回调 */
   onGenerate: (request: InputRequest) => void;
-  /** 是否正在生成中 */
   isGenerating: boolean;
 }
 
 export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps) {
-  // 主输入框内容
   const [userInput, setUserInput] = useState("");
-  // 可选参数是否展开
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  // 可选参数值
-  const [pageCount, setPageCount] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [audience, setAudience] = useState("");
-  // 前端校验错误信息
   const [error, setError] = useState("");
 
-  /** 点击生成按钮 */
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 从已上传文件中获取 DocumentContext 列表
+  const documents: DocumentContext[] = uploadedFiles
+    .filter((f) => f.status === "done" && f.parsed)
+    .map((f) => ({
+      filename: f.parsed!.filename,
+      content: f.parsed!.rawText,
+      hasPageStructure: f.parsed!.hasPageStructure,
+      pageCount: f.parsed!.pageCount,
+      pages: f.parsed!.pages,
+      headings: f.parsed!.headings,
+    }));
+
+
+  const parsedDocs = uploadedFiles.filter((f) => f.status === "done" && f.parsed).map((f) => f.parsed!);
+  const hasDocuments = parsedDocs.length > 0;
+  const scenario = hasDocuments ? detectScenario(parsedDocs) : null;
+  const canUploadMore = uploadedFiles.filter((f) => f.status !== "error").length < 3;
+  const isUploading = uploadedFiles.some((f) => f.status === "uploading");
+
+  const uploadFiles = useCallback(async (newFiles: File[]) => {
+    if (!newFiles.length) return;
+    const available = 3 - uploadedFiles.filter((f) => f.status !== "error").length;
+    const toUpload = newFiles.slice(0, available);
+
+    const pending: UploadedFile[] = toUpload.map((file) => ({ file, status: "uploading" }));
+    const merged = [...uploadedFiles, ...pending];
+    setUploadedFiles(merged);
+
+    try {
+      const formData = new FormData();
+      toUpload.forEach((f) => formData.append("files[]", f));
+      const res = await fetch("/api/parse", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setUploadedFiles((prev) =>
+          prev.map((f) => pending.some((p) => p.file === f.file)
+            ? { ...f, status: "error", error: data.error ?? "解析失败" } : f)
+        );
+        return;
+      }
+
+      const parsedList: ParsedDocument[] = data.documents ?? [];
+      setUploadedFiles((prev) =>
+        prev.map((f) => {
+          if (!pending.some((p) => p.file === f.file)) return f;
+          const parsed = parsedList.find((d) => d.filename === f.file.name);
+          return parsed
+            ? { ...f, status: "done", parsed }
+            : { ...f, status: "error", error: "解析结果未返回" };
+        })
+      );
+    } catch {
+      setUploadedFiles((prev) =>
+        prev.map((f) => pending.some((p) => p.file === f.file)
+          ? { ...f, status: "error", error: "网络错误，请重试" } : f)
+      );
+    }
+  }, [uploadedFiles]);
+
+  const removeFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = () => {
-    // 前端校验
-    if (!userInput.trim()) {
-      setError("请输入 PPT 主题或描述内容");
+    if (!userInput.trim() && documents.length === 0) {
+      setError("请输入 PPT 主题，或上传参考文档");
       return;
     }
-    if (userInput.length > 5000) {
-      setError("输入内容不能超过 5000 字符");
-      return;
-    }
-
     setError("");
-
-    // 构造请求对象
-    const request: InputRequest = {
-      userInput: userInput.trim(),
-    };
-    if (pageCount && !isNaN(Number(pageCount))) {
-      request.pageCount = Number(pageCount);
+    const request: InputRequest = { userInput: userInput.trim() };
+    if (documents.length > 0) {
+      request.documents = documents;
+      request.scenarioType = scenario ?? undefined;
     }
-    if (purpose) request.purpose = purpose;
-    if (audience.trim()) request.audience = audience.trim();
-
     onGenerate(request);
   };
 
-  /** 点击示例主题 */
-  const handleExampleClick = (topic: string) => {
-    setUserInput(topic);
-    setError("");
-  };
-
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-      {/* 主输入框 */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          描述你的 PPT 主题
-          <span className="text-red-500 ml-1">*</span>
-        </label>
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+
+      {/* ── 文字输入区 ──────────────────────────────────── */}
+      <div className="p-5 pb-0">
         <textarea
           value={userInput}
-          onChange={(e) => {
-            setUserInput(e.target.value);
-            if (error) setError("");
-          }}
+          onChange={(e) => { setUserInput(e.target.value); if (error) setError(""); }}
           disabled={isGenerating}
-          placeholder="请描述你的 PPT 主题，越详细越好。例如：帮我做一个关于公司 2025 年 Q1 销售业绩的汇报 PPT，面向公司高层，需要重点展示增长数据和下季度策略..."
-          className="w-full min-h-[120px] p-3 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y disabled:bg-gray-50 disabled:cursor-not-allowed"
+          placeholder={hasDocuments
+            ? "可选：补充说明你的需求，或留空直接用文档生成..."
+            : "描述你的 PPT 主题，或在下方上传参考文档..."}
+          className="w-full min-h-[100px] p-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none resize-none disabled:cursor-not-allowed bg-transparent"
           maxLength={5000}
         />
-        <div className="flex justify-between mt-1">
-          <span className="text-xs text-red-500">{error}</span>
-          <span className={`text-xs ${userInput.length > 4500 ? "text-red-500" : "text-gray-400"}`}>
+      </div>
+
+      {/* ── 分隔线 + 上传区 ──────────────────────────────── */}
+      <div className="border-t border-gray-100 mx-5" />
+
+      <div className="px-5 py-3">
+        {/* 已上传文件列表 */}
+        {uploadedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {uploadedFiles.map((item, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs border
+                  ${item.status === "error" ? "bg-red-50 border-red-200 text-red-600"
+                  : item.status === "uploading" ? "bg-blue-50 border-blue-200 text-blue-600"
+                  : "bg-gray-50 border-gray-200 text-gray-700"}`}
+              >
+                {item.status === "uploading" && (
+                  <svg className="animate-spin w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                )}
+                {item.status === "done" && (
+                  <svg className="w-3 h-3 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/>
+                  </svg>
+                )}
+                {item.status === "error" && (
+                  <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                )}
+                <span className="max-w-[120px] truncate" title={item.error || item.file.name}>
+                  {item.status === "error" ? (item.error ?? "失败") : item.file.name}
+                </span>
+                {item.status === "done" && item.parsed && (
+                  <span className="text-gray-400">{formatSize(item.file.size)}</span>
+                )}
+                {!isGenerating && (
+                  <button onClick={() => removeFile(i)} className="ml-0.5 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 场景识别徽章 */}
+        {scenario && SCENARIO_LABELS[scenario] && (
+          <div className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border mb-2 ${SCENARIO_LABELS[scenario].color}`}>
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            场景 {scenario}（{SCENARIO_LABELS[scenario].label}）· AI {SCENARIO_LABELS[scenario].desc}
+          </div>
+        )}
+
+        {/* 底部工具栏：上传按钮 + 字数 + 示例 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 上传按钮 */}
+          {canUploadMore && !isGenerating && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ACCEPTED_FILE_TYPES}
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  if (files.length) { uploadFiles(files); e.target.value = ""; }
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault(); setIsDragOver(false);
+                  uploadFiles(Array.from(e.dataTransfer.files));
+                }}
+              >
+                <svg className={`w-4 h-4 ${isDragOver ? "text-blue-500" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                </svg>
+                上传文档
+              </button>
+              <span className="text-gray-200">|</span>
+            </>
+          )}
+
+          {/* 示例主题 */}
+          <div className="flex flex-wrap gap-1.5 flex-1">
+            {EXAMPLE_TOPICS.slice(0, 3).map((topic) => (
+              <button
+                key={topic}
+                onClick={() => { setUserInput(topic); setError(""); }}
+                disabled={isGenerating}
+                className="text-xs px-2.5 py-1 bg-gray-50 text-gray-500 rounded-full hover:bg-blue-50 hover:text-blue-600 transition-colors disabled:opacity-50"
+              >
+                {topic.slice(0, 16)}…
+              </button>
+            ))}
+          </div>
+
+          {/* 字数 */}
+          <span className={`text-xs ml-auto flex-shrink-0 ${userInput.length > 4500 ? "text-red-400" : "text-gray-300"}`}>
             {userInput.length}/5000
           </span>
         </div>
       </div>
 
-      {/* 示例主题 */}
-      <div className="mb-4">
-        <p className="text-xs text-gray-500 mb-2">试试这些示例：</p>
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLE_TOPICS.map((topic) => (
-            <button
-              key={topic}
-              onClick={() => handleExampleClick(topic)}
-              disabled={isGenerating}
-              className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {topic.length > 20 ? topic.slice(0, 20) + "..." : topic}
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {/* 高级选项（默认折叠） */}
-      <div className="mb-5">
+      {/* ── 底部：错误 + 生成按钮 ────────────────────────── */}
+      <div className="px-5 pb-5 pt-3 border-t border-gray-100">
+        {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
         <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          disabled={isGenerating}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          onClick={handleSubmit}
+          disabled={isGenerating || (!userInput.trim() && documents.length === 0)}
+          className="w-full py-2.5 px-6 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          <svg
-            className={`w-4 h-4 transition-transform ${showAdvanced ? "rotate-90" : ""}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          高级选项（可选）
+          {isGenerating ? (
+            <>
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              生成中...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              生成大纲
+            </>
+          )}
         </button>
-
-        {showAdvanced && (
-          <div className="mt-3 p-4 bg-gray-50 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* 页数 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                期望页数
-              </label>
-              <input
-                type="number"
-                value={pageCount}
-                onChange={(e) => setPageCount(e.target.value)}
-                disabled={isGenerating}
-                placeholder="5-30"
-                min={5}
-                max={30}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-              />
-              <p className="text-xs text-gray-400 mt-1">不填则 AI 自动推荐</p>
-            </div>
-
-            {/* 用途 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                PPT 用途
-              </label>
-              <select
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                disabled={isGenerating}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed bg-white"
-              >
-                <option value="">AI 自动判断</option>
-                {PURPOSE_OPTIONS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 受众 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                目标受众
-              </label>
-              <input
-                type="text"
-                value={audience}
-                onChange={(e) => setAudience(e.target.value)}
-                disabled={isGenerating}
-                placeholder="如：公司高层、投资人"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-              />
-            </div>
-          </div>
-        )}
       </div>
-
-      {/* 生成按钮 */}
-      <button
-        onClick={handleSubmit}
-        disabled={isGenerating || !userInput.trim()}
-        className="w-full py-3 px-6 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-      >
-        {isGenerating ? (
-          <>
-            {/* 旋转加载图标 */}
-            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            生成中...
-          </>
-        ) : (
-          <>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            生成大纲
-          </>
-        )}
-      </button>
     </div>
   );
 }

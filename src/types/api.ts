@@ -25,6 +25,8 @@ export interface DocumentContext {
   content: string;
   /** 是否有明确分页结构 */
   hasPageStructure: boolean;
+  /** 文档总页数（若可可靠获取） */
+  pageCount?: number;
   /** 若有分页，按页存储内容 */
   pages?: string[];
   /** 提取的标题列表 */
@@ -50,7 +52,21 @@ export interface GenerateRequest {
 }
 
 /** SSE 进度状态步骤（parse 步骤仅在有文档时出现） */
-export type SSEStep = "parse" | "intent" | "storyline" | "outline";
+export type SSEStep = "parse" | "intent" | "storyline" | "research" | "outline";
+
+/** 联网检索来源 */
+export interface ResearchSource {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+/** 联网检索上下文（M2 输出） */
+export interface ResearchContext {
+  queries: string[];
+  keyFindings: string[];
+  sources: ResearchSource[];
+}
 
 /** SSE 事件类型联合体 */
 export type SSEEvent =
@@ -69,6 +85,11 @@ export type SSEEvent =
       /** M3 故事线构建完成事件 */
       type: "storyline";
       data: Storyline;
+    }
+  | {
+      /** M2 联网检索完成事件 */
+      type: "research";
+      data: ResearchContext;
     }
   | {
       /** M4 流式输出：单页大纲就绪事件（生成多少推多少） */

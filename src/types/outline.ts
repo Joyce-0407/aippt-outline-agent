@@ -40,8 +40,6 @@ export interface PageDesign {
   layout: string;
   /** 视觉元素建议，如["图标", "数据图表", "配图"] */
   visualElements: string[];
-  /** 可选：色调建议 */
-  colorTone?: string;
 }
 
 /** PPT 单页大纲 */
@@ -64,6 +62,18 @@ export interface Page {
   transitionToNext?: string;
 }
 
+/** 全局视觉风格（整份 PPT 通用） */
+export interface GlobalDesignSystem {
+  /** 风格基调，如"科技简约"、"商务稳重" */
+  styleTone: string;
+  /** 主色板建议，如["#0F172A", "#2563EB", "#E2E8F0"] */
+  palette: string[];
+  /** 字体风格建议 */
+  typography: string;
+  /** 图标/插画风格建议 */
+  visualStyle: string;
+}
+
 /** 大纲元信息 */
 export interface OutlineMeta {
   /** PPT 总标题 */
@@ -76,6 +86,8 @@ export interface OutlineMeta {
   totalPages: number;
   /** 场景类型，Phase 1 固定为 B */
   scenarioType: string;
+  /** 全局视觉风格（整份 PPT 通用） */
+  designSystem: GlobalDesignSystem;
 }
 
 /** 完整的 PPT 大纲（最终输出） */

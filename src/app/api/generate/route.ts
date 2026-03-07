@@ -13,9 +13,11 @@ const documentContextSchema = z.object({
   filename: z.string(),
   content: z.string(),
   hasPageStructure: z.boolean(),
+  pageCount: z.number().int().min(1).optional(),
   pages: z.array(z.string()).optional(),
   headings: z.array(z.string()),
 });
+
 
 const generateRequestSchema = z.object({
   userInput: z.string().min(1, "userInput 不能为空").max(5000, "userInput 不能超过 5000 字符"),

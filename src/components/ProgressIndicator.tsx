@@ -13,6 +13,7 @@ export interface ProgressState {
   parse?: StepStatus;
   intent: StepStatus;
   storyline: StepStatus;
+  research: StepStatus;
   outline: StepStatus;
 }
 
@@ -34,6 +35,12 @@ const ALL_STEPS = [
     key: "storyline" as const,
     label: "构建故事线",
     description: "规划叙事框架与章节",
+    optional: false,
+  },
+  {
+    key: "research" as const,
+    label: "联网检索",
+    description: "补充外部事实与案例",
     optional: false,
   },
   {

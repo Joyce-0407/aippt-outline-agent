@@ -12,6 +12,8 @@ export interface ParsedDocument {
   rawText: string;
   /** 是否有明确分页标记（如 "第X页"、"Page X"、分隔线+标题等） */
   hasPageStructure: boolean;
+  /** 文档总页数（若可可靠获取） */
+  pageCount?: number;
   /** 若有分页，按页存储内容 */
   pages?: string[];
   /** 提取的标题列表 */

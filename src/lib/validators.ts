@@ -19,7 +19,7 @@ export const intentAnalysisSchema = z.object({
   /** 目标受众 */
   audience: z.string().min(1, "audience 不能为空"),
   /** 场景类型，Phase 1 固定为 B */
-  scenarioType: z.literal("B"),
+  scenarioType: z.enum(["A", "B", "C"]),
   /** 推荐页数，5-30 之间 */
   pageCountSuggestion: z.number().int().min(5).max(30),
   /** 风格提示 */
@@ -94,7 +94,6 @@ const pageContentSchema = z.object({
 const pageDesignSchema = z.object({
   layout: z.string().min(1),
   visualElements: z.array(z.string()),
-  colorTone: z.string().optional(),
 });
 
 /** 单页大纲 Schema */
@@ -109,6 +108,14 @@ const pageSchema = z.object({
   transitionToNext: z.string().optional(),
 });
 
+/** 全局视觉风格 Schema */
+const globalDesignSystemSchema = z.object({
+  styleTone: z.string().min(1),
+  palette: z.array(z.string()).min(1),
+  typography: z.string().min(1),
+  visualStyle: z.string().min(1),
+});
+
 /** 元信息 Schema */
 const outlineMetaSchema = z.object({
   title: z.string().min(1),
@@ -116,6 +123,7 @@ const outlineMetaSchema = z.object({
   audience: z.string().min(1),
   totalPages: z.number().int().min(1),
   scenarioType: z.string(),
+  designSystem: globalDesignSystemSchema,
 });
 
 /** M4 输出的完整大纲 Schema */

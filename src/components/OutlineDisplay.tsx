@@ -7,11 +7,20 @@ import type { Storyline } from "@/types/storyline";
 
 // ── OutlineMeta ──────────────────────────────────────────────
 
-function OutlineMeta({ intent, outline }: { intent?: IntentAnalysis; outline?: PPTOutline }) {
+function OutlineMeta({
+  intent,
+  storyline,
+  outline,
+}: {
+  intent?: IntentAnalysis;
+  storyline?: Storyline;
+  outline?: PPTOutline;
+}) {
   const title = outline?.meta.title ?? "大纲生成中...";
   const purpose = outline?.meta.purpose ?? intent?.purpose ?? "-";
   const audience = outline?.meta.audience ?? intent?.audience ?? "-";
-  const totalPages = outline?.meta.totalPages ?? intent?.pageCountSuggestion ?? "-";
+  const totalPages = outline?.meta.totalPages ?? storyline?.totalPages ?? intent?.pageCountSuggestion ?? "-";
+  const globalStyle = outline?.meta.designSystem;
 
   return (
     <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-6 text-white">
@@ -47,6 +56,29 @@ function OutlineMeta({ intent, outline }: { intent?: IntentAnalysis; outline?: P
           </svg>
         </div>
       </div>
+      {globalStyle && (
+        <div className="mt-4 pt-4 border-t border-white/20">
+          <p className="text-blue-200 text-xs mb-2">全局视觉风格</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div className="bg-white/15 rounded-md px-2 py-1.5">
+              <span className="text-blue-200">风格基调：</span>
+              <span className="text-white">{globalStyle.styleTone}</span>
+            </div>
+            <div className="bg-white/15 rounded-md px-2 py-1.5">
+              <span className="text-blue-200">字体风格：</span>
+              <span className="text-white">{globalStyle.typography}</span>
+            </div>
+            <div className="bg-white/15 rounded-md px-2 py-1.5 sm:col-span-2">
+              <span className="text-blue-200">视觉风格：</span>
+              <span className="text-white">{globalStyle.visualStyle}</span>
+            </div>
+            <div className="bg-white/15 rounded-md px-2 py-1.5 sm:col-span-2">
+              <span className="text-blue-200">主色板：</span>
+              <span className="text-white">{globalStyle.palette.join(" / ")}</span>
+            </div>
+          </div>
+        </div>
+      )}
       {intent?.coreMessage && (
         <div className="mt-4 pt-4 border-t border-white/20">
           <p className="text-blue-200 text-xs mb-1">核心信息</p>
@@ -149,12 +181,12 @@ export default function OutlineDisplay({
 
   // 优先用最终校验过的 outline.pages，否则用流式累积的 streamedPages
   const pagesToShow = outline?.pages ?? streamedPages;
-  const totalExpected = outline?.meta.totalPages ?? intent.pageCountSuggestion ?? 0;
+  const totalExpected = outline?.meta.totalPages ?? storyline?.totalPages ?? intent.pageCountSuggestion ?? 0;
   const isStreaming = !outline && streamedPages.length > 0;
 
   return (
     <div className="space-y-5">
-      <OutlineMeta intent={intent} outline={outline} />
+      <OutlineMeta intent={intent} storyline={storyline} outline={outline} />
 
       {storyline && <StorylineView storyline={storyline} />}
 

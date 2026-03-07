@@ -5,7 +5,7 @@
 
 import type { IntentAnalysis } from "@/types/intent";
 import type { Storyline } from "@/types/storyline";
-import type { DocumentContext } from "@/types/api";
+import type { DocumentContext, ResearchContext } from "@/types/api";
 
 /** 根据场景类型生成场景策略说明文字 */
 function buildScenarioInstruction(
@@ -63,7 +63,8 @@ export function buildM4Prompt(
   userInput: string,
   intent: IntentAnalysis,
   storyline: Storyline,
-  documents?: DocumentContext[]
+  documents?: DocumentContext[],
+  research?: ResearchContext
 ): string {
   // 将章节信息格式化为易读文本，注入到 Prompt 中
   const sectionsText = storyline.sections
@@ -77,10 +78,20 @@ export function buildM4Prompt(
   const scenarioType = intent.scenarioType ?? "B";
   const scenarioInstruction = buildScenarioInstruction(scenarioType, documents);
 
+  const researchText = research
+    ? `\n## 联网检索补充（仅供参考，需与主题强相关）\n${research.keyFindings
+        .map((f, i) => `${i + 1}. ${f}`)
+        .join("\n")}\n\n可引用来源：\n${research.sources
+        .slice(0, 6)
+        .map((s, i) => `${i + 1}. ${s.title} - ${s.url}`)
+        .join("\n")}`
+    : "";
+
   return `## 任务
 基于已确定的故事线，为每一页生成详细的 PPT 大纲。必须输出所有 ${storyline.totalPages} 页的完整内容。
 
 ${scenarioInstruction}
+${researchText}
 
 ## 用户原始输入
 """
@@ -100,18 +111,30 @@ ${userInput}
 ${sectionsText}
 - 总页数：${storyline.totalPages}
 
+## 全局风格（整份 PPT 统一）
+请先确定一套全局设计系统，写入 \`meta.designSystem\`，并在所有页面保持一致。
+
+\`meta.designSystem\` 必须包含：
+- styleTone：整套风格基调（如“科技简约”“高端商务”）
+- palette：主色板（2-5 个颜色值或色彩描述）
+- typography：字体风格建议（如“无衬线现代体，标题加粗”）
+- visualStyle：全局视觉风格（如“线性图标+扁平插画”）
+
+**约束**：
+- 不要在每页 \`design\` 中重复全局色调/风格信息
+- 每页 \`design\` 只描述该页独有的布局与视觉元素
+
 ## 每页必须包含的字段
 
 1. **pageNumber**：页码（从1开始）
 2. **section**：所属章节标题（与故事线中的章节 title 保持一致）
 3. **title**：页面标题（清晰有力，最多15字）
 4. **creativeIntent**：创作思路（解释这一页为什么这样写，1-2句话，30-60字）
-5. **design**：设计建议
+5. **design**：设计建议（仅包含单页相关信息）
    - layout：布局类型（从以下选择或自定义）：
      "全屏标题页" | "左图右文" | "右图左文" | "三栏并列" | "上下分割" |
      "全图背景+文字叠加" | "数据图表+解读" | "时间轴" | "对比分析" | "要点列表"
-   - visualElements：视觉元素建议数组（具体说明，如"展示AI技术演进的时间轴图"而非仅说"时间轴"）
-   - colorTone：可选，色调建议（如"深蓝商务风"、"清新绿色"）
+   - visualElements：视觉元素建议数组（仅写该页独有元素，如"展示AI技术演进的时间轴图"）
 6. **content**：页面内容
    - headline：主标题（即页面核心信息的文字表达）
    - subheadline：可选，副标题或补充说明
@@ -139,7 +162,13 @@ ${sectionsText}
     "purpose": "${intent.purpose}",
     "audience": "${intent.audience}",
     "totalPages": ${storyline.totalPages},
-    "scenarioType": "${scenarioType}"
+    "scenarioType": "${scenarioType}",
+    "designSystem": {
+      "styleTone": "string -- 全局风格基调",
+      "palette": ["string -- 主色板颜色或描述"],
+      "typography": "string -- 字体风格建议",
+      "visualStyle": "string -- 全局视觉风格"
+    }
   },
   "storyline": ${JSON.stringify(storyline)},
   "pages": [
@@ -150,8 +179,7 @@ ${sectionsText}
       "creativeIntent": "string -- 创作思路（30-60字）",
       "design": {
         "layout": "string -- 布局类型",
-        "visualElements": ["string -- 具体视觉元素描述"],
-        "colorTone": "string（可选）"
+        "visualElements": ["string -- 具体视觉元素描述（仅该页）"]
       },
       "content": {
         "headline": "string -- 主标题",
