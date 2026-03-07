@@ -95,6 +95,18 @@ export async function generateOutline(
   onEvent: (event: SSEEvent) => void
 ): Promise<PPTOutline> {
   const docCount = input.documents?.length ?? 0;
+
+  // 若用户未输入文字但上传了文档，从文档中提取摘要作为 userInput
+  if (!input.userInput.trim() && docCount > 0) {
+    const doc = input.documents![0];
+    const headingsStr = doc.headings.length > 0 ? doc.headings.slice(0, 5).join("、") : "";
+    const contentPreview = doc.content.slice(0, 200).replace(/\s+/g, " ").trim();
+    input = {
+      ...input,
+      userInput: `根据上传的文档"${doc.filename}"生成 PPT 大纲。${headingsStr ? `文档要点：${headingsStr}。` : ""}${contentPreview}`,
+    };
+  }
+
   console.log(`[Orchestrator] 开始，输入长度: ${input.userInput.length} 字，文档数: ${docCount}`);
 
   const config: LLMClientConfig = {

@@ -20,7 +20,7 @@ const documentContextSchema = z.object({
 
 
 const generateRequestSchema = z.object({
-  userInput: z.string().min(1, "userInput 不能为空").max(5000, "userInput 不能超过 5000 字符"),
+  userInput: z.string().max(5000, "userInput 不能超过 5000 字符"),
   pageCount: z.number().int().min(5).max(30).optional(),
   purpose: z.string().optional(),
   audience: z.string().optional(),
@@ -33,7 +33,10 @@ const generateRequestSchema = z.object({
     baseUrl: z.string().url("Base URL 格式不正确"),
     model: z.string().min(1, "模型名称不能为空"),
   }),
-});
+}).refine(
+  (data) => data.userInput.trim().length > 0 || (data.documents && data.documents.length > 0),
+  { message: "请输入主题或上传文档", path: ["userInput"] }
+);
 
 function formatSSE(event: SSEEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
