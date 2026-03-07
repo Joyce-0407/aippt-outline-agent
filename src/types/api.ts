@@ -52,7 +52,7 @@ export interface GenerateRequest {
 }
 
 /** SSE 进度状态步骤（parse 步骤仅在有文档时出现） */
-export type SSEStep = "parse" | "intent" | "storyline" | "research" | "outline";
+export type SSEStep = "parse" | "intent" | "storyline" | "research" | "outline" | "slides";
 
 /** 联网检索来源 */
 export interface ResearchSource {
@@ -101,6 +101,24 @@ export type SSEEvent =
       /** M4 全部页面生成完成，推送最终校验过的完整大纲 */
       type: "outline";
       data: PPTOutline;
+    }
+  | {
+      /** M6 进入 HTML 幻灯片生成阶段 */
+      type: "slides_start";
+      totalPages: number;
+    }
+  | {
+      /** M6 单页 HTML 生成完成 */
+      type: "slide_html";
+      /** 1-based 页码，与大纲中的 pageNumber 对应 */
+      pageNumber: number;
+      html: string;
+    }
+  | {
+      /** M6 单页生成失败（重试耗尽后推送） */
+      type: "slide_error";
+      pageNumber: number;
+      message: string;
     }
   | {
       /** 错误事件 */

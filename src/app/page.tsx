@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import InputPanel from "@/components/InputPanel";
 import ProgressIndicator, { type ProgressState } from "@/components/ProgressIndicator";
 import OutlineDisplay from "@/components/OutlineDisplay";
+import SlidePreview from "@/components/SlidePreview";
 import SettingsPanel from "@/components/SettingsPanel";
 import type { GenerateRequest, LLMConfig, SSEEvent, ResearchContext } from "@/types/api";
 import type { IntentAnalysis } from "@/types/intent";
@@ -12,11 +13,14 @@ import type { PPTOutline, Page } from "@/types/outline";
 
 type AppStatus = "idle" | "generating" | "done" | "error";
 
+type ViewTab = "outline" | "slides";
+
 const INITIAL_PROGRESS: ProgressState = {
   intent: "waiting",
   storyline: "waiting",
   research: "waiting",
   outline: "waiting",
+  slides: "waiting",
 };
 
 const DEFAULT_CONFIG: LLMConfig = {
@@ -48,6 +52,9 @@ export default function Home() {
   const [outline, setOutline] = useState<PPTOutline | undefined>();
   const [streamedPages, setStreamedPages] = useState<Page[]>([]);
   const [researchContext, setResearchContext] = useState<ResearchContext | undefined>();
+  const [slideHtmls, setSlideHtmls] = useState<Map<number, string>>(new Map());
+  const [slideTotalPages, setSlideTotalPages] = useState(0);
+  const [activeTab, setActiveTab] = useState<ViewTab>("outline");
   const [errorMessage, setErrorMessage] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(DEFAULT_CONFIG);
@@ -72,6 +79,9 @@ export default function Home() {
     setOutline(undefined);
     setStreamedPages([]);
     setResearchContext(undefined);
+    setSlideHtmls(new Map());
+    setSlideTotalPages(0);
+    setActiveTab("outline");
     setErrorMessage("");
   };
 
@@ -88,7 +98,7 @@ export default function Home() {
     resetState();
     setHasDocuments((request.documents?.length ?? 0) > 0);
     setAppStatus("generating");
-    setProgress({ intent: "running", storyline: "waiting", research: "waiting", outline: "waiting" });
+    setProgress({ intent: "running", storyline: "waiting", research: "waiting", outline: "waiting", slides: "waiting" });
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -173,6 +183,12 @@ export default function Home() {
             next.storyline = "done";
             next.research = "done";
             next.outline = "running";
+          } else if (event.step === "slides") {
+            next.intent = "done";
+            next.storyline = "done";
+            next.research = "done";
+            next.outline = "done";
+            next.slides = "running";
           }
           return next;
         });
@@ -196,6 +212,21 @@ export default function Home() {
         setOutline(event.data);
         setProgress((prev) => ({ ...prev, outline: "done" }));
         break;
+      case "slides_start":
+        setSlideTotalPages(event.totalPages);
+        setActiveTab("slides");
+        setProgress((prev) => ({ ...prev, slides: "running" }));
+        break;
+      case "slide_html":
+        setSlideHtmls((prev) => {
+          const next = new Map(prev);
+          next.set(event.pageNumber, event.html);
+          return next;
+        });
+        break;
+      case "slide_error":
+        console.warn(`[SSE] 第 ${event.pageNumber} 页 HTML 生成失败: ${event.message}`);
+        break;
       case "error":
         setErrorMessage(event.message);
         setAppStatus("error");
@@ -209,6 +240,7 @@ export default function Home() {
         break;
       case "done":
         setAppStatus("done");
+        setProgress((prev) => ({ ...prev, slides: "done" }));
         break;
     }
   };
@@ -314,7 +346,47 @@ export default function Home() {
         )}
 
         {showResult && (
-          <OutlineDisplay intent={intent} storyline={storyline} streamedPages={streamedPages} outline={outline} researchContext={researchContext} />
+          <>
+            {/* Tab 切换：大纲 / PPT 预览 */}
+            {slideTotalPages > 0 && (
+              <div className="flex gap-1 bg-white rounded-xl p-1 border border-gray-200 w-fit">
+                <button
+                  onClick={() => setActiveTab("outline")}
+                  className={`px-4 py-1.5 text-sm rounded-lg transition-colors ${
+                    activeTab === "outline" ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  大纲
+                </button>
+                <button
+                  onClick={() => setActiveTab("slides")}
+                  className={`px-4 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+                    activeTab === "slides" ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  PPT 预览
+                  {isGenerating && slideHtmls.size < slideTotalPages && (
+                    <span className="text-xs opacity-70">{slideHtmls.size}/{slideTotalPages}</span>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {activeTab === "outline" && (
+              <OutlineDisplay intent={intent} storyline={storyline} streamedPages={streamedPages} outline={outline} researchContext={researchContext} />
+            )}
+
+            {activeTab === "slides" && slideTotalPages > 0 && (
+              <SlidePreview
+                slides={slideHtmls}
+                totalPages={slideTotalPages}
+                isGenerating={isGenerating}
+                pages={outline?.pages}
+                designSystem={outline?.meta.designSystem}
+                llmConfig={llmConfig}
+              />
+            )}
+          </>
         )}
 
         {appStatus === "idle" && (

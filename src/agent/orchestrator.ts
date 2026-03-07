@@ -7,6 +7,7 @@ import { analyzeIntent } from "@/agent/modules/m1-intent-analyzer";
 import { buildStoryline } from "@/agent/modules/m3-storyline-builder";
 import { generateDetailedOutline } from "@/agent/modules/m4-outline-generator";
 import { researchTopic } from "@/agent/modules/m2-researcher";
+import { renderAllSlides } from "@/agent/modules/m6-slide-renderer";
 import { LLMError, type LLMClientConfig } from "@/lib/llm-client";
 import type { GenerateRequest, SSEEvent, DocumentContext } from "@/types/api";
 import type { PPTOutline } from "@/types/outline";
@@ -212,8 +213,25 @@ export async function generateOutline(
 
   // 流式完成后推送完整大纲（前端用于最终状态更新）
   onEvent({ type: "outline", data: outline });
+
+  // ── M6 HTML 幻灯片生成 ──────────────────────────────────────
+  onEvent({ type: "status", step: "slides", message: "正在生成 PPT 预览..." });
+  onEvent({ type: "slides_start", totalPages: outline.pages.length });
+
+  await renderAllSlides(
+    outline,
+    config,
+    (pageNumber, html) => {
+      onEvent({ type: "slide_html", pageNumber, html });
+    },
+    (pageNumber, message) => {
+      onEvent({ type: "slide_error", pageNumber, message });
+    }
+  );
+
+  // M6 全部完成后才推送 done，前端以此判断整个流程结束
   onEvent({ type: "done" });
 
-  console.log("[Orchestrator] 全流程完成！");
+  console.log("[Orchestrator] 全流程完成（含 HTML 生成）！");
   return outline;
 }

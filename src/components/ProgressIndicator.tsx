@@ -15,6 +15,7 @@ export interface ProgressState {
   storyline: StepStatus;
   research: StepStatus;
   outline: StepStatus;
+  slides: StepStatus;
 }
 
 /** 进度步骤定义 */
@@ -47,6 +48,12 @@ const ALL_STEPS = [
     key: "outline" as const,
     label: "生成大纲",
     description: "逐页生成详细内容",
+    optional: false,
+  },
+  {
+    key: "slides" as const,
+    label: "生成页面",
+    description: "渲染 HTML 幻灯片",
     optional: false,
   },
 ];
