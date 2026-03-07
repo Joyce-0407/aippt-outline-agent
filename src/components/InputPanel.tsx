@@ -18,8 +18,9 @@ const EXAMPLE_TOPICS = [
 const ACCEPTED_FILE_TYPES = ".pdf,.docx,.doc,.md,.markdown,.txt";
 
 const SCENARIO_LABELS: Record<string, { label: string; color: string; desc: string }> = {
-  A: { label: "结构化还原", color: "bg-blue-50 text-blue-700 border-blue-200", desc: "将按原始结构生成大纲" },
-  C: { label: "散乱重组", color: "bg-amber-50 text-amber-700 border-amber-200", desc: "将重新梳理文档逻辑" },
+  A: { label: "结构化还原", color: "bg-blue-50 text-blue-700 border-blue-200", desc: "按原始结构生成大纲" },
+  B: { label: "主题扩展", color: "bg-green-50 text-green-700 border-green-200", desc: "联网检索补充内容" },
+  C: { label: "散乱重组", color: "bg-amber-50 text-amber-700 border-amber-200", desc: "重新梳理文档逻辑" },
 };
 
 function formatSize(bytes: number) {
@@ -49,6 +50,7 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
 
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [scenarioOverride, setScenarioOverride] = useState<"A" | "B" | "C" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 从已上传文件中获取 DocumentContext 列表
@@ -66,7 +68,8 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
 
   const parsedDocs = uploadedFiles.filter((f) => f.status === "done" && f.parsed).map((f) => f.parsed!);
   const hasDocuments = parsedDocs.length > 0;
-  const scenario = hasDocuments ? detectScenario(parsedDocs) : null;
+  const autoScenario = hasDocuments ? detectScenario(parsedDocs) : null;
+  const scenario = scenarioOverride ?? autoScenario;
   const canUploadMore = uploadedFiles.filter((f) => f.status !== "error").length < 3;
   const isUploading = uploadedFiles.some((f) => f.status === "uploading");
 
@@ -124,7 +127,9 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
     const request: InputRequest = { userInput: userInput.trim() };
     if (documents.length > 0) {
       request.documents = documents;
-      request.scenarioType = scenario ?? undefined;
+    }
+    if (scenario) {
+      request.scenarioType = scenario;
     }
     onGenerate(request);
   };
@@ -195,13 +200,31 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
           </div>
         )}
 
-        {/* 场景识别徽章 */}
-        {scenario && SCENARIO_LABELS[scenario] && (
-          <div className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border mb-2 ${SCENARIO_LABELS[scenario].color}`}>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-            </svg>
-            场景 {scenario}（{SCENARIO_LABELS[scenario].label}）· AI {SCENARIO_LABELS[scenario].desc}
+        {/* 场景选择：有文档时显示自动检测结果 + 手动切换 */}
+        {(hasDocuments || scenarioOverride) && (
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            {(["A", "B", "C"] as const).map((s) => {
+              const info = SCENARIO_LABELS[s];
+              // 无文档时不允许选 A/C（需要文档）
+              const disabled = !hasDocuments && s !== "B";
+              const isActive = scenario === s;
+              const isAuto = !scenarioOverride && autoScenario === s;
+              return (
+                <button
+                  key={s}
+                  disabled={isGenerating || disabled}
+                  onClick={() => setScenarioOverride(isActive && scenarioOverride ? null : s)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-30 disabled:cursor-not-allowed
+                    ${isActive ? info.color + " font-medium" : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"}`}
+                >
+                  {s} · {info.label}
+                  {isAuto && " (自动)"}
+                </button>
+              );
+            })}
+            {scenario && SCENARIO_LABELS[scenario] && (
+              <span className="text-xs text-gray-400 ml-1">{SCENARIO_LABELS[scenario].desc}</span>
+            )}
           </div>
         )}
 

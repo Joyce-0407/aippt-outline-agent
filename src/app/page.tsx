@@ -5,7 +5,7 @@ import InputPanel from "@/components/InputPanel";
 import ProgressIndicator, { type ProgressState } from "@/components/ProgressIndicator";
 import OutlineDisplay from "@/components/OutlineDisplay";
 import SettingsPanel from "@/components/SettingsPanel";
-import type { GenerateRequest, LLMConfig, SSEEvent } from "@/types/api";
+import type { GenerateRequest, LLMConfig, SSEEvent, QualityReviewResult, ResearchContext } from "@/types/api";
 import type { IntentAnalysis } from "@/types/intent";
 import type { Storyline } from "@/types/storyline";
 import type { PPTOutline, Page } from "@/types/outline";
@@ -17,6 +17,7 @@ const INITIAL_PROGRESS: ProgressState = {
   storyline: "waiting",
   research: "waiting",
   outline: "waiting",
+  review: "waiting",
 };
 
 const DEFAULT_CONFIG: LLMConfig = {
@@ -47,6 +48,8 @@ export default function Home() {
   const [storyline, setStoryline] = useState<Storyline | undefined>();
   const [outline, setOutline] = useState<PPTOutline | undefined>();
   const [streamedPages, setStreamedPages] = useState<Page[]>([]);
+  const [qualityReview, setQualityReview] = useState<QualityReviewResult | undefined>();
+  const [researchContext, setResearchContext] = useState<ResearchContext | undefined>();
   const [errorMessage, setErrorMessage] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(DEFAULT_CONFIG);
@@ -70,6 +73,8 @@ export default function Home() {
     setStoryline(undefined);
     setOutline(undefined);
     setStreamedPages([]);
+    setQualityReview(undefined);
+    setResearchContext(undefined);
     setErrorMessage("");
   };
 
@@ -86,7 +91,7 @@ export default function Home() {
     resetState();
     setHasDocuments((request.documents?.length ?? 0) > 0);
     setAppStatus("generating");
-    setProgress({ intent: "running", storyline: "waiting", research: "waiting", outline: "waiting" });
+    setProgress({ intent: "running", storyline: "waiting", research: "waiting", outline: "waiting", review: "waiting" });
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -171,6 +176,12 @@ export default function Home() {
             next.storyline = "done";
             next.research = "done";
             next.outline = "running";
+          } else if (event.step === "review") {
+            next.intent = "done";
+            next.storyline = "done";
+            next.research = "done";
+            next.outline = "done";
+            next.review = "running";
           }
           return next;
         });
@@ -184,7 +195,12 @@ export default function Home() {
         setProgress((prev) => ({ ...prev, storyline: "done" }));
         break;
       case "research":
+        setResearchContext(event.data);
         setProgress((prev) => ({ ...prev, research: "done" }));
+        break;
+      case "review":
+        setQualityReview(event.data);
+        setProgress((prev) => ({ ...prev, review: "done" }));
         break;
       case "page":
         setStreamedPages((prev) => [...prev, event.data]);
@@ -311,7 +327,7 @@ export default function Home() {
         )}
 
         {showResult && (
-          <OutlineDisplay intent={intent} storyline={storyline} streamedPages={streamedPages} outline={outline} />
+          <OutlineDisplay intent={intent} storyline={storyline} streamedPages={streamedPages} outline={outline} qualityReview={qualityReview} researchContext={researchContext} />
         )}
 
         {appStatus === "idle" && (
