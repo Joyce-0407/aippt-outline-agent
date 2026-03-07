@@ -17,11 +17,6 @@ const EXAMPLE_TOPICS = [
 
 const ACCEPTED_FILE_TYPES = ".pdf,.docx,.doc,.md,.markdown,.txt";
 
-const SCENARIO_LABELS: Record<string, { label: string; color: string; desc: string }> = {
-  A: { label: "结构化还原", color: "bg-blue-50 text-blue-700 border-blue-200", desc: "按原始结构生成大纲" },
-  B: { label: "主题扩展", color: "bg-green-50 text-green-700 border-green-200", desc: "联网检索补充内容" },
-  C: { label: "散乱重组", color: "bg-amber-50 text-amber-700 border-amber-200", desc: "重新梳理文档逻辑" },
-};
 
 function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -50,7 +45,6 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
 
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [scenarioOverride, setScenarioOverride] = useState<"A" | "B" | "C" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 从已上传文件中获取 DocumentContext 列表
@@ -68,8 +62,7 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
 
   const parsedDocs = uploadedFiles.filter((f) => f.status === "done" && f.parsed).map((f) => f.parsed!);
   const hasDocuments = parsedDocs.length > 0;
-  const autoScenario = hasDocuments ? detectScenario(parsedDocs) : "B";
-  const scenario = scenarioOverride ?? autoScenario;
+  const scenario = hasDocuments ? detectScenario(parsedDocs) : "B";
   const canUploadMore = uploadedFiles.filter((f) => f.status !== "error").length < 3;
   const isUploading = uploadedFiles.some((f) => f.status === "uploading");
 
@@ -197,34 +190,6 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
                 )}
               </div>
             ))}
-          </div>
-        )}
-
-        {/* 场景选择：始终可见，让用户了解和切换生成模式 */}
-        {(hasDocuments || scenarioOverride || userInput.trim().length > 0) && (
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            {(["A", "B", "C"] as const).map((s) => {
-              const info = SCENARIO_LABELS[s];
-              // 无文档时不允许选 A/C（需要文档）
-              const disabled = !hasDocuments && s !== "B";
-              const isActive = scenario === s;
-              const isAuto = !scenarioOverride && autoScenario === s;
-              return (
-                <button
-                  key={s}
-                  disabled={isGenerating || disabled}
-                  onClick={() => setScenarioOverride(isActive && scenarioOverride ? null : s)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-30 disabled:cursor-not-allowed
-                    ${isActive ? info.color + " font-medium" : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"}`}
-                >
-                  {s} · {info.label}
-                  {isAuto && " (自动)"}
-                </button>
-              );
-            })}
-            {scenario && SCENARIO_LABELS[scenario] && (
-              <span className="text-xs text-gray-400 ml-1">{SCENARIO_LABELS[scenario].desc}</span>
-            )}
           </div>
         )}
 
