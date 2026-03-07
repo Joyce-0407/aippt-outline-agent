@@ -4,7 +4,7 @@ import PageCard from "./PageCard";
 import type { PPTOutline, Page } from "@/types/outline";
 import type { IntentAnalysis } from "@/types/intent";
 import type { Storyline } from "@/types/storyline";
-import type { QualityReviewResult, ResearchContext } from "@/types/api";
+import type { ResearchContext } from "@/types/api";
 
 // ── OutlineMeta ──────────────────────────────────────────────
 
@@ -200,100 +200,6 @@ function ResearchSourcesCard({ research }: { research: ResearchContext }) {
   );
 }
 
-// ── 质量审查卡片 ─────────────────────────────────────────────
-
-const DIMENSION_LABELS: Record<string, string> = {
-  intentAlignment: "需求契合",
-  logicalCoherence: "逻辑连贯",
-  contentCompleteness: "内容完整",
-  informationDensity: "信息密度",
-  audienceMatch: "受众匹配",
-  practicality: "实用性",
-};
-
-function ScoreBar({ score, label }: { score: number; label: string }) {
-  const color =
-    score >= 8 ? "bg-green-500" : score >= 6 ? "bg-blue-500" : score >= 4 ? "bg-amber-500" : "bg-red-500";
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-500 w-16 flex-shrink-0">{label}</span>
-      <div className="flex-1 bg-gray-100 rounded-full h-2">
-        <div className={`h-2 rounded-full ${color} transition-all`} style={{ width: `${score * 10}%` }} />
-      </div>
-      <span className="text-xs font-medium text-gray-700 w-6 text-right">{score}</span>
-    </div>
-  );
-}
-
-function QualityReviewCard({ review }: { review: QualityReviewResult }) {
-  const scoreColor =
-    review.overallScore >= 8
-      ? "text-green-600 bg-green-50 border-green-200"
-      : review.overallScore >= 6
-        ? "text-blue-600 bg-blue-50 border-blue-200"
-        : "text-amber-600 bg-amber-50 border-amber-200";
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-1 h-5 bg-purple-600 rounded-full" />
-        <h3 className="text-base font-bold text-gray-900">质量审查</h3>
-        <span className={`ml-auto text-lg font-bold px-3 py-0.5 rounded-full border ${scoreColor}`}>
-          {review.overallScore}/10
-        </span>
-      </div>
-
-      <p className="text-sm text-gray-600 mb-4">{review.summary}</p>
-
-      {/* 维度评分 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-        {Object.entries(review.dimensionScores).map(([key, score]) => (
-          <ScoreBar key={key} score={score} label={DIMENSION_LABELS[key] ?? key} />
-        ))}
-      </div>
-
-      {/* 优点 */}
-      {review.strengths.length > 0 && (
-        <div className="mb-3">
-          <p className="text-xs text-gray-400 mb-1.5">亮点</p>
-          <div className="flex flex-wrap gap-1.5">
-            {review.strengths.map((s, i) => (
-              <span key={i} className="text-xs px-2 py-0.5 bg-green-50 text-green-700 rounded-full">
-                {s}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 问题 */}
-      {review.issues.length > 0 && (
-        <div>
-          <p className="text-xs text-gray-400 mb-1.5">待改进</p>
-          <div className="space-y-1.5">
-            {review.issues.map((issue, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs">
-                <span
-                  className={`flex-shrink-0 px-1.5 py-0.5 rounded text-white font-medium ${
-                    issue.severity === "high" ? "bg-red-500" : issue.severity === "medium" ? "bg-amber-500" : "bg-gray-400"
-                  }`}
-                >
-                  {issue.severity === "high" ? "高" : issue.severity === "medium" ? "中" : "低"}
-                </span>
-                <span className="text-gray-600">
-                  {issue.pageNumber ? `P${issue.pageNumber} · ` : ""}
-                  {issue.description}
-                  {issue.suggestion && <span className="text-gray-400"> → {issue.suggestion}</span>}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── 页面加载占位动画 ─────────────────────────────────────────
 
 function PageSkeleton() {
@@ -321,8 +227,6 @@ interface OutlineDisplayProps {
   streamedPages?: Page[];
   /** 最终完整大纲（M4 全部完成后） */
   outline?: PPTOutline;
-  /** M5 质量审查结果 */
-  qualityReview?: QualityReviewResult;
   /** M2 联网检索结果 */
   researchContext?: ResearchContext;
 }
@@ -332,7 +236,6 @@ export default function OutlineDisplay({
   storyline,
   streamedPages = [],
   outline,
-  qualityReview,
   researchContext,
 }: OutlineDisplayProps) {
   if (!intent) return null;
@@ -387,7 +290,6 @@ export default function OutlineDisplay({
         </div>
       )}
 
-      {qualityReview && <QualityReviewCard review={qualityReview} />}
     </div>
   );
 }

@@ -68,7 +68,7 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
 
   const parsedDocs = uploadedFiles.filter((f) => f.status === "done" && f.parsed).map((f) => f.parsed!);
   const hasDocuments = parsedDocs.length > 0;
-  const autoScenario = hasDocuments ? detectScenario(parsedDocs) : null;
+  const autoScenario = hasDocuments ? detectScenario(parsedDocs) : "B";
   const scenario = scenarioOverride ?? autoScenario;
   const canUploadMore = uploadedFiles.filter((f) => f.status !== "error").length < 3;
   const isUploading = uploadedFiles.some((f) => f.status === "uploading");
@@ -200,8 +200,8 @@ export default function InputPanel({ onGenerate, isGenerating }: InputPanelProps
           </div>
         )}
 
-        {/* 场景选择：有文档时显示自动检测结果 + 手动切换 */}
-        {(hasDocuments || scenarioOverride) && (
+        {/* 场景选择：始终可见，让用户了解和切换生成模式 */}
+        {(hasDocuments || scenarioOverride || userInput.trim().length > 0) && (
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             {(["A", "B", "C"] as const).map((s) => {
               const info = SCENARIO_LABELS[s];

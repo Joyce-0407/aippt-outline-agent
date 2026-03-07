@@ -15,7 +15,6 @@ export interface ProgressState {
   storyline: StepStatus;
   research: StepStatus;
   outline: StepStatus;
-  review: StepStatus;
 }
 
 /** 进度步骤定义 */
@@ -48,12 +47,6 @@ const ALL_STEPS = [
     key: "outline" as const,
     label: "生成大纲",
     description: "逐页生成详细内容",
-    optional: false,
-  },
-  {
-    key: "review" as const,
-    label: "质量审查",
-    description: "检查逻辑与完整性",
     optional: false,
   },
 ];

@@ -7,7 +7,6 @@ import { analyzeIntent } from "@/agent/modules/m1-intent-analyzer";
 import { buildStoryline } from "@/agent/modules/m3-storyline-builder";
 import { generateDetailedOutline } from "@/agent/modules/m4-outline-generator";
 import { researchTopic } from "@/agent/modules/m2-researcher";
-import { reviewOutlineQuality } from "@/agent/modules/m5-quality-checker";
 import { LLMError, type LLMClientConfig } from "@/lib/llm-client";
 import type { GenerateRequest, SSEEvent, DocumentContext } from "@/types/api";
 import type { PPTOutline } from "@/types/outline";
@@ -168,8 +167,8 @@ export async function generateOutline(
 
   // ── M2 联网检索（场景B优先）────────────────────────────────────
   let researchResult;
+  onEvent({ type: "status", step: "research", message: resolvedScenarioType === "B" ? "正在联网检索补充信息..." : "非场景B，跳过联网检索" });
   if (resolvedScenarioType === "B") {
-    onEvent({ type: "status", step: "research", message: "正在联网检索补充信息..." });
     researchResult = await researchTopic(input.userInput, resolvedIntentResult);
     if (researchResult) {
       onEvent({ type: "research", data: researchResult });
@@ -199,37 +198,10 @@ export async function generateOutline(
     throw error;
   }
 
-  // ── M5 质量审查 ──────────────────────────────────────────────
-  onEvent({ type: "status", step: "review", message: "正在审查大纲质量..." });
-
-  let finalOutline = outline;
-  try {
-    const { review, refinedOutline } = await reviewOutlineQuality(
-      input.userInput,
-      resolvedIntentResult,
-      outline,
-      config
-    );
-    finalOutline = refinedOutline;
-    onEvent({ type: "review", data: {
-      overallScore: review.overallScore,
-      dimensionScores: review.dimensionScores,
-      summary: review.summary,
-      issues: review.issues,
-      strengths: review.strengths,
-    }});
-    if (refinedOutline !== outline) {
-      console.log(`[Orchestrator] M5 修正了大纲，推送更新版本`);
-    }
-  } catch (error) {
-    // M5 审查失败不阻断流程，降级使用原始大纲
-    console.warn(`[Orchestrator] M5 审查失败，降级继续：`, error instanceof Error ? error.message : error);
-  }
-
-  // 流式完成后推送完整校验大纲（前端用于最终状态更新）
-  onEvent({ type: "outline", data: finalOutline });
+  // 流式完成后推送完整大纲（前端用于最终状态更新）
+  onEvent({ type: "outline", data: outline });
   onEvent({ type: "done" });
 
   console.log("[Orchestrator] 全流程完成！");
-  return finalOutline;
+  return outline;
 }

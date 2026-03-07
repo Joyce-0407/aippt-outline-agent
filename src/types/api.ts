@@ -52,32 +52,7 @@ export interface GenerateRequest {
 }
 
 /** SSE 进度状态步骤（parse 步骤仅在有文档时出现） */
-export type SSEStep = "parse" | "intent" | "storyline" | "research" | "outline" | "review";
-
-/** 质量审查问题 */
-export interface QualityIssue {
-  severity: "high" | "medium" | "low";
-  pageNumber?: number;
-  dimension: string;
-  description: string;
-  suggestion: string;
-}
-
-/** 质量审查结果（M5 输出） */
-export interface QualityReviewResult {
-  overallScore: number;
-  dimensionScores: {
-    intentAlignment: number;
-    logicalCoherence: number;
-    contentCompleteness: number;
-    informationDensity: number;
-    audienceMatch: number;
-    practicality: number;
-  };
-  summary: string;
-  issues: QualityIssue[];
-  strengths: string[];
-}
+export type SSEStep = "parse" | "intent" | "storyline" | "research" | "outline";
 
 /** 联网检索来源 */
 export interface ResearchSource {
@@ -126,11 +101,6 @@ export type SSEEvent =
       /** M4 全部页面生成完成，推送最终校验过的完整大纲 */
       type: "outline";
       data: PPTOutline;
-    }
-  | {
-      /** M5 质量审查完成事件 */
-      type: "review";
-      data: QualityReviewResult;
     }
   | {
       /** 错误事件 */
